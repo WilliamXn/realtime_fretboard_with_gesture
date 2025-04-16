@@ -18,7 +18,8 @@ class GuitarPerformanceCollector:
             static_image_mode=False,
             max_num_hands=1,
             min_detection_confidence=0.7,
-            min_tracking_confidence=0.5
+            min_tracking_confidence=0.5,
+            model_complexity=1
         )
         self.cap = video_capture
         
@@ -36,6 +37,11 @@ class GuitarPerformanceCollector:
         self.origin_idx = 0  # 点0
         self.vec1_idx = 1    # 点1
         self.vec2_idx = 2    # 点2
+        
+        # 手部跟踪状态
+        self.last_hand_kps = None  # 存储最后有效的手部关键点
+        self.missing_hand_frames = 0  # 统计连续未检测到手的帧数
+        self.max_missing_frames = 10  # 最多允许10帧（约0.33秒@30FPS）未检测到手
     
     def detect_landmarks(self, frame):
         # YOLO指板检测
@@ -47,9 +53,24 @@ class GuitarPerformanceCollector:
         hand_results = self.mp_hands.process(rgb_frame)
         hand_kps = None
         
-        if hand_results.multi_hand_landmarks:
-            hand_kps = np.array([[lm.x * frame.shape[1], lm.y * frame.shape[0]] 
-                                for lm in hand_results.multi_hand_landmarks[0].landmark])
+        if hand_results.multi_hand_landmarks and hand_results.multi_handedness:
+            for idx, handedness in enumerate(hand_results.multi_handedness):
+                # 检查手是否标记为“Right”（镜像后的左手）
+                if handedness.classification[0].label == "Right":
+                    hand_kps = np.array([[lm.x * frame.shape[1], lm.y * frame.shape[0]] 
+                                        for lm in hand_results.multi_hand_landmarks[idx].landmark])
+                    # 更新最后有效关键点并重置未检测帧计数
+                    self.last_hand_kps = hand_kps
+                    self.missing_hand_frames = 0
+                    break  # 优先处理第一个“Right”手
+        
+        # 如果未检测到“Right”手，使用最后有效关键点（如果可用）
+        if hand_kps is None:
+            self.missing_hand_frames += 1
+            if self.last_hand_kps is not None and self.missing_hand_frames <= self.max_missing_frames:
+                hand_kps = self.last_hand_kps  # 重用最后有效关键点
+            else:
+                self.last_hand_kps = None  # 长时间未检测到后清除
         
         return fretboard_kps, hand_kps
     
@@ -189,29 +210,29 @@ class GuitarPerformanceCollector:
         #     prev_time = time.time()
         #     frame_count = 0
         #     fps = 0
-            
+        #     
         #     while True:
         #         ret, frame = self.cap.read()
         #         key = cv2.waitKey(1) & 0xFF
         #         if not ret:
         #             print("无法获取视频帧")
         #             break
-                
+        #         
         #         frame_count += 1
-                
+        #         
         #         frame = self.handle_landmarks(frame, key)
         #         time.sleep(0.1)  # 控制采样频率
-                
+        #         
         #         # 计算FPS
         #         if frame_count % 10 == 0:
         #             curr_time = time.time()
         #             fps = 10 / (curr_time - prev_time)
         #             prev_time = curr_time
-                
+        #         
         #         cv2.putText(frame, f"FPS: {int(fps)}", (10, 150), 
         #                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                
-                
+        #         
+        #         
         #         # 键盘控制
         #         if key == ord('q'):
         #             break
@@ -220,13 +241,11 @@ class GuitarPerformanceCollector:
         #             self.start_recording(chord_name)
         #         elif key == ord('s'):
         #             self.stop_recording()
-
-                
+        # 
         # finally:
         #     self.destroy()
 
     def handle_landmarks(self, frame, key, fretboard_kps=None, hand_kps=None, normalized_kps=None):
-        
         # 如果检测到两者，则记录数据
         if self.is_recording and fretboard_kps is not None and hand_kps is not None:
             if normalized_kps is not None:
@@ -239,12 +258,13 @@ class GuitarPerformanceCollector:
                 print(f"当前归一化坐标 (第一个关键点): {normalized_kps[0]}")
         return frame
   
-
     def destroy(self):
         self.cap.release()
         cv2.destroyAllWindows()
         if self.is_recording:
             self.stop_recording()
+        self.last_hand_kps = None
+        self.missing_hand_frames = 0
 
 if __name__ == "__main__":
     collector = GuitarPerformanceCollector(

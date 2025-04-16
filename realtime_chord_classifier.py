@@ -39,6 +39,11 @@ class RealTimeChordClassifier:
         
         # 摄像头
         self.cap = video_capture
+        
+        # 手部跟踪状态
+        self.last_hand_kps = None  # 存储最后有效的手部关键点
+        self.missing_hand_frames = 0  # 统计连续未检测到手的帧数
+        self.max_missing_frames = 10  # 最多允许10帧（约0.33秒@30FPS）未检测到手
     
     def start_capture(self, camera_index=0):
         self.cap = cv2.VideoCapture(camera_index)
@@ -57,9 +62,24 @@ class RealTimeChordClassifier:
         hand_results = self.mp_hands.process(rgb_frame)
         hand_kps = None
         
-        if hand_results.multi_hand_landmarks:
-            hand_kps = np.array([[lm.x * frame.shape[1], lm.y * frame.shape[0]] 
-                               for lm in hand_results.multi_hand_landmarks[0].landmark])
+        if hand_results.multi_hand_landmarks and hand_results.multi_handedness:
+            for idx, handedness in enumerate(hand_results.multi_handedness):
+                # 检查手是否标记为“Right”（镜像后的左手）
+                if handedness.classification[0].label == "Right":
+                    hand_kps = np.array([[lm.x * frame.shape[1], lm.y * frame.shape[0]] 
+                                        for lm in hand_results.multi_hand_landmarks[idx].landmark])
+                    # 更新最后有效关键点并重置未检测帧计数
+                    self.last_hand_kps = hand_kps
+                    self.missing_hand_frames = 0
+                    break  # 优先处理第一个“Right”手
+        
+        # 如果未检测到“Right”手，使用最后有效关键点（如果可用）
+        if hand_kps is None:
+            self.missing_hand_frames += 1
+            if self.last_hand_kps is not None and self.missing_hand_frames <= self.max_missing_frames:
+                hand_kps = self.last_hand_kps  # 重用最后有效关键点
+            else:
+                self.last_hand_kps = None  # 长时间未检测到后清除
         
         return fretboard_kps, hand_kps
     

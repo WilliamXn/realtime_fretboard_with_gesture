@@ -2,6 +2,7 @@ import os
 import sys
 import cv2
 import numpy as np
+import json
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QLabel, QLineEdit, QPushButton, QComboBox, QTabWidget, 
                             QMessageBox, QFileDialog, QFrame)
@@ -81,7 +82,18 @@ class GuitarChordApp(QMainWindow):
         chord_layout = QHBoxLayout()
         chord_label = QLabel("Chord to Collect:")
         self.chord_combo = QComboBox()
-        self.chord_combo.addItems(["C", "D", "E", "F", "G", "A", "B"])
+        # Load chords from JSON file
+        try:
+            with open("chords.json", "r") as f:
+                chord_list = json.load(f)
+                if not isinstance(chord_list, list) or not all(isinstance(chord, str) for chord in chord_list):
+                    raise ValueError("Invalid chord list format in chords.json")
+                self.chord_combo.addItems(chord_list)
+        except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+            # Fallback to default chord list if JSON loading fails
+            default_chords = ["C", "D", "E", "F", "G", "A", "B"]
+            self.chord_combo.addItems(default_chords)
+            QMessageBox.warning(self, "Warning", f"Failed to load chords from chords.json: {str(e)}. Using default chords: {default_chords}")
         chord_layout.addWidget(chord_label)
         chord_layout.addWidget(self.chord_combo)
 
@@ -207,21 +219,40 @@ class GuitarChordApp(QMainWindow):
             QMessageBox.critical(self, "Error", "Camera not initialized or opened")
             self.timer.stop()
             return
+        
         ret, frame = self.capture.read()
         if not ret:
             QMessageBox.critical(self, "Error", "Failed to read frame from camera")
             self.timer.stop()
             return
+        
         # 获取当前按键
         key = cv2.waitKey(1) & 0xFF
-        # 检测关键点
-        fretboard_kps, hand_kps = self.collector.detect_landmarks(frame)
-        normalized_kps = self.collector.normalize_coordinates(fretboard_kps, hand_kps)
-        _frame = self.collector.handle_landmarks(frame, key, fretboard_kps, hand_kps, normalized_kps) if self.collector else frame
-        _frame = self.classifier.handle_prediction(_frame, key, fretboard_kps, hand_kps, normalized_kps) if self.classifier else _frame
+        
+        # 初始化处理后的帧为原始帧
+        processed_frame = frame
+        
+        # 只有collector存在时才检测关键点
+        if self.collector is not None:
+            fretboard_kps, hand_kps = self.collector.detect_landmarks(frame)
+            normalized_kps = self.collector.normalize_coordinates(fretboard_kps, hand_kps)
+            processed_frame = self.collector.handle_landmarks(
+                frame, key, fretboard_kps, hand_kps, normalized_kps
+            )
+        
+        # 只有classifier存在时才处理预测
+        if self.classifier is not None:
+            processed_frame = self.classifier.handle_prediction(
+                processed_frame, key, 
+                fretboard_kps if 'fretboard_kps' in locals() else None, 
+                hand_kps if 'hand_kps' in locals() else None, 
+                normalized_kps if 'normalized_kps' in locals() else None
+            )
+        
         # 显示帧
-        self.current_frame = _frame
-        self.update_frame_signal.emit(_frame)
+        self.current_frame = processed_frame
+        self.update_frame_signal.emit(processed_frame)
+        
         # 处理按键事件
         self.handle_key_event(key)
 
