@@ -72,9 +72,8 @@ self.model_path_entry = QLineEdit("path/to/your/fretboard-detection-200epochs.pt
 - `main.py`：主应用程序，包含 GUI 和核心逻辑
 - `guitar_data_collector.py`：数据采集模块，检测指板和手部关键点并保存数据
 - `train_chord_classifier.py`：训练随机森林分类器
-- `realtime_chord_classifier.py`：实时和弦分类↳
-- `requirements.txt`：项目依赖↳
-- `main.spec`：PyInstaller 打包配置文件
+- `realtime_chord_classifier.py`：实时和弦分类
+- `requirements.txt`：项目依赖
 - `chords.json`：和弦列表（可选，默认包含 C、D、E、F、G、A、B）
 - `guitar_data/`：数据存储目录
 - `chord_classifier/`：训练好的模型存储目录
@@ -98,6 +97,8 @@ python main.py
 - **实时分类**：实时识别和弦
 
 ### 2. 数据采集
+![image](https://github.com/user-attachments/assets/9ec5c365-5fdc-41a1-b599-0b6cccf8c222)
+
 
 1. 在“数据采集”选项卡中：
    - **YOLO 模型路径**：确保指向正确的 `fretboard-detection-200epochs.pt`。
@@ -113,6 +114,8 @@ python main.py
 - 数据保存在 `guitar_data` 目录，包含归一化的手部关键点坐标。
 
 ### 3. 模型训练
+![image](https://github.com/user-attachments/assets/671ea85b-b29f-49a8-abea-fb40c9e59307)
+
 
 1. 在“模型训练”选项卡中：
    - **数据目录**：指向包含 CSV 文件的目录（默认 `guitar_data`）。
@@ -127,6 +130,8 @@ python main.py
 - 特征重要性分析（关键点的 x/y 坐标重要性）
 
 ### 4. 实时分类
+![image](https://github.com/user-attachments/assets/22d8ad94-28be-49e2-833f-5d1d4f192244)
+
 
 1. 在“实时分类”选项卡中：
    - **模型目录**：指向包含训练好的模型文件的目录（默认 `chord_classifier`）。
